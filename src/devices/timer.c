@@ -20,6 +20,9 @@
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
 
+//  Number of timer ticks since OS booted. 
+static struct list sleep_list;
+
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
@@ -35,6 +38,8 @@ static void real_time_delay (int64_t num, int32_t denom);
 void
 timer_init (void) 
 {
+  //clear -- roda uma vez so no boot! LEMBRAR
+  list_init (&sleep_list); 
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
@@ -83,6 +88,20 @@ timer_elapsed (int64_t then)
 {
   return timer_ticks () - then;
 }
+
+/* Retorna true se a thread A deve acordar antes da thread B.
+   Usada para manter a lista de sono ordenada pelo tick de acordar. */
+static bool
+wakeup_less (const struct list_elem *a, const struct list_elem *b,
+                void *aux UNUSED)
+{
+  struct thread *ta = list_entry (a, struct thread, sleep_element);
+  struct thread *tb = list_entry (b, struct thread, sleep_element);
+
+  return ta->wakeup_tick < tb->wakeup_tick;
+}
+
+
 
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
