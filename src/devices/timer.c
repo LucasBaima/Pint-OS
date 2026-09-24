@@ -108,12 +108,23 @@ wakeup_less (const struct list_elem *a, const struct list_elem *b,
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
+  struct thread *t; //Declaracoes
+  enum intr_level old_level;
+
+  if (ticks <= 0) //0 ou negativo n dorme
+    return;
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+
+  t = thread_current ();  // quem sou?
+  t->wakeup_tick = timer_ticks () + ticks; //agora + ticks = me acorda... 
+
+  old_level = intr_disable (); // desligar interrupcoes e guarda estado anterior
+  list_insert_ordered (&sleep_list, &t->sleep_element, wakeup_less, NULL); // pendurar na ordem de quem acorda primeiro
+  thread_block (); // threaD(blocked) --> só continua quando o timer_interrupt der thread_unblock nela.
+  intr_set_level (old_level);
 }
+
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
    turned on. */
@@ -190,6 +201,19 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+
+  while (!list_empty (&sleep_list)) // enquanto tivermos alguem dormido no "quadro"
+    {
+      struct thread *t = list_entry (list_front (&sleep_list), // qual thread pertecence o gancho 1
+                                     struct thread, sleep_element);
+
+      if (t->wakeup_tick > ticks) // Como a lista é ordenada, se a primeira não deu a hora, ninguém atrás deu
+        break;
+
+      list_pop_front (&sleep_list);
+      thread_unblock (t);
+    }
+
   thread_tick ();
 }
 
